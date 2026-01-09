@@ -1,31 +1,30 @@
-## VRM auto setup
+## VRM ARKit Blendshapes Auto Setup
 
-This is mainly made for exporting for vseeface/ARkit tracking/Unified Expressions
+This tool automates VRM blendshape generation to speed up setup in Unity.
 
-This unity editor tool is made to auto setup a vrm Blendshape avatar with the blendshapes for:
+![Screenshot of VRM ARKit Blendshapes Auto Setup in Unity](https://i.imgur.com/A8cvxLU.png)
 
-* Arkit face tracking
-* Unified Expressions
-* Vrc visemes
-* UE to ARkit convertion BETA
+The **Avatar Name** field is used only to name your generated files:
 
+![Screenshot of VRM ARKit Blendshapes Auto Setup in Unity](https://i.imgur.com/fKAfm4Y.png)
 
-### [Download](https://github.com/tracer755/VRC_VRM_BlendShape_Avatar_Setup/releases)
+The **Blendshapes Object** field should reference an object with a **Skinned Mesh Renderer** that contains VRM visemes (A, E, I, O, U, …) and facial tracking blendshapes (ARKit or Unified Expressions).  
+These blendshapes are usually located in the avatar's **Body** object, but this may vary by creator:
+
+![Screenshot of Unity showing the object containing the Skinned Mesh Renderer with VRM visemes and facial tracking blendshapes](https://i.imgur.com/jP7YJJK.png)
+
+The **Blendshapes List** includes all ARKit blendshapes plus VRM visemes on the left, with corresponding target blendshapes (either ARKit or Unified Expressions) on the right:
+
+![Screenshot of VRM ARKit Blendshapes Auto Setup showing ARKit blendshapes and their corresponding target blendshapes](https://i.imgur.com/vRbIiM6.png)
+
+### [Download](https://github.com/KogaNoodle/VRM_ARKit_Blendshape_Setup/releases)
+
 ---
-
-Heres a tutorial on how to use the tool 
-https://www.youtube.com/watch?v=Jqlpn2Or6A8
-
-[Ritual neo](https://www.youtube.com/channel/UCaHuQWPtaw8XLRMIOctBQRQ) was the one who requested this tools construction <br />This was made to save time manualy assigning blendshapes to the Blendshape Avatar <br /> 
-
-This tool is not a silver bullet and has some edge cases that the tool will not work with <br /> I am looking into fixing these issues
-
-
-
+## Credits
+This script is based on [Tracer755 VRM Auto Setup](https://github.com/tracer755/VRC_VRM_BlendShape_Avatar_Setup).
 
 ---
 ## Notes
-* Your input blendshapes must be named according to vrchat / arkit / UE naming conventions (Not case sensetive)
-* Please verify your avatar. Some avatars have weird/unconventional names for blendshapes
-* For extra visemes Vseeface requires all extra visemes to be present [SIL, CH, DD, FF, KK, NN, PP, RR, SS, TH]
-* UE to ARkit convertion is currently a BETA feature and may need user tweaking to get everything looking just right
+- Your model's blendshapes must follow VRChat / ARKit / UE naming conventions (case-insensitive).
+- Please verify your avatar. Some models use unconventional blendshape names and may need to be edited to match the conventions mentioned above.
+- For VSeeFace compatibility, all extra visemes must be present: `SIL`, `CH`, `DD`, `FF`, `KK`, `NN`, `PP`, `RR`, `SS`, `TH`.
