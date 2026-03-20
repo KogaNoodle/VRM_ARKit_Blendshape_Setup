@@ -26,7 +26,7 @@ namespace VrmAutoSetup.Editor
             
             // Stage 3: Levenshtein distance (75% threshold)
             string bestFuzzy = null;
-            float bestScore = 0.75f;
+            float bestScore = 0.8f;
             
             foreach (var candidate in candidateList)
             {
@@ -48,7 +48,7 @@ namespace VrmAutoSetup.Editor
             return source?.IndexOf(toCheck, comp) >= 0;
         }
         
-        private static float CalculateSimilarity(string s1, string s2)
+        public static float CalculateSimilarity(string s1, string s2)
         {
             int distance = LevenshteinDistance(s1.ToLower(), s2.ToLower());
             int maxLen = Math.Max(s1.Length, s2.Length);
