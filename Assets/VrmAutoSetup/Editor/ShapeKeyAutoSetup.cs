@@ -6,8 +6,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.UIElements;
 using VRM;
 
 public class ShapeKeyAutoSetup : EditorWindow
@@ -21,13 +19,25 @@ public class ShapeKeyAutoSetup : EditorWindow
     Vector2 scrollPos;
     int blendShapeCount = 0;
     float progress = 0f;
-    private static Texture2D validTexture;
-    private static Texture2D invalidTexture;
-    private static Texture2D infoTexture;
-    private static GUIStyle validStyle;
-    private static GUIStyle invalidStyle;
-    private static GUIStyle infoStyle;
+    private static GUIStyle headerStyle;
+    private static GUIStyle subtitleStyle;
+    private static GUIStyle sectionHeaderStyle;
+    private static GUIStyle foldoutHeaderStyle;
+    private static GUIStyle listItemStyle;
+    private static GUIStyle btnStyle;
+    private static GUIStyle overrideBtnStyleActive;
+    private static GUIStyle overrideBtnStyleInactive;
+    private static GUIStyle copyBtnStyle;
+    
+    // Icons
+    private GUIContent infoIcon;
+    private GUIContent targetIcon;
+    private GUIContent statusIcon;
+
     bool showBsList = false;
+    GameObject lastAvatar = null;
+    string[] avatarBlendshapeNames = new string[0];
+    Dictionary<string, BlendshapeMappingState> mappingStates = new Dictionary<string, BlendshapeMappingState>();
 
     Dictionary<int, string> avatarBlendshapes = new Dictionary<int, string>();
     // Dictionary based on ARKit Blendshapes and it's respective UE counterparts
@@ -104,296 +114,538 @@ public class ShapeKeyAutoSetup : EditorWindow
         { "Blink", new string[] { "Blink", "EyeBlinkLeft", "EyeClosedLeft", "EyeClosed", "EyeBlinkRight", "EyeClosedRight", "EyeClosed" } }
     };
 
-    NamePreset[] NamePresets = new NamePreset[] { new NamePreset { name="A", blendShapePreset=BlendShapePreset.A}, new NamePreset { name = "E", blendShapePreset = BlendShapePreset.E }, new NamePreset { name = "I", blendShapePreset = BlendShapePreset.I }, new NamePreset { name = "O", blendShapePreset = BlendShapePreset.O }, new NamePreset { name = "U", blendShapePreset = BlendShapePreset.U }, new NamePreset { name = "Blink", blendShapePreset = BlendShapePreset.Blink }, new NamePreset { name = "Blink_R", blendShapePreset = BlendShapePreset.Blink_R }, new NamePreset { name = "Blink_L", blendShapePreset = BlendShapePreset.Blink_L } };
-    [MenuItem("Tools/VRM/Blendshapes Auto Setup")]
+    LocalNamePreset[] NamePresets = new LocalNamePreset[] { new LocalNamePreset { name="A", blendShapePreset=BlendShapePreset.A}, new LocalNamePreset { name = "E", blendShapePreset = BlendShapePreset.E }, new LocalNamePreset { name = "I", blendShapePreset = BlendShapePreset.I }, new LocalNamePreset { name = "O", blendShapePreset = BlendShapePreset.O }, new LocalNamePreset { name = "U", blendShapePreset = BlendShapePreset.U }, new LocalNamePreset { name = "Blink", blendShapePreset = BlendShapePreset.Blink }, new LocalNamePreset { name = "Blink_R", blendShapePreset = BlendShapePreset.Blink_R }, new LocalNamePreset { name = "Blink_L", blendShapePreset = BlendShapePreset.Blink_L } };
     
+    [MenuItem("Vtuber/Blendshapes Auto Setup")]
     public static void ShowWindow() {
-        GetWindow(typeof(ShapeKeyAutoSetup));
+        var window = GetWindow<ShapeKeyAutoSetup>("ARKit Setup");
+        window.minSize = new Vector2(400, 550);
+        window.Show();
+    }
+
+    private void InitializeStyles()
+    {
+        if (headerStyle != null) return; // Already initialized
+
+        headerStyle = new GUIStyle(EditorStyles.boldLabel) {
+            fontSize = 22,
+            alignment = TextAnchor.MiddleCenter,
+            normal = { textColor = new Color(0.85f, 0.85f, 0.85f) },
+            margin = new RectOffset(0, 0, 10, 5)
+        };
+
+        subtitleStyle = new GUIStyle(EditorStyles.label) {
+            fontSize = 12,
+            richText = true,
+            alignment = TextAnchor.MiddleCenter,
+            normal = { textColor = new Color(0.55f, 0.55f, 0.55f) },
+            margin = new RectOffset(0, 0, 0, 15)
+        };
+
+        sectionHeaderStyle = new GUIStyle(EditorStyles.boldLabel) {
+            fontSize = 14,
+            richText = true,
+            normal = { textColor = new Color(0.85f, 0.85f, 0.85f) },
+            margin = new RectOffset(0, 0, 0, 5)
+        };
+
+        listItemStyle = new GUIStyle(EditorStyles.label) {
+            richText = true,
+            fontSize = 12,
+            margin = new RectOffset(5, 5, 2, 2)
+        };
+
+        btnStyle = new GUIStyle(GUI.skin.button) {
+            fontSize = 14,
+            fontStyle = FontStyle.Bold,
+            padding = new RectOffset(10, 10, 10, 10),
+            margin = new RectOffset(20, 20, 20, 20)
+        };
+
+        overrideBtnStyleActive = new GUIStyle(GUI.skin.button) {
+            normal = { textColor = Color.black },
+            fontStyle = FontStyle.Bold,
+            fixedWidth = 75
+        };
+
+        overrideBtnStyleInactive = new GUIStyle(GUI.skin.button) {
+            normal = { textColor = new Color(0.7f, 0.7f, 0.7f) },
+            fixedWidth = 75
+        };
+
+        copyBtnStyle = new GUIStyle(GUI.skin.button) {
+            fontSize = 12,
+            fontStyle = FontStyle.Bold,
+            padding = new RectOffset(8, 8, 8, 8),
+            margin = new RectOffset(10, 10, 10, 10)
+        };
+
+        // Load built-in Unity icons
+        infoIcon = EditorGUIUtility.IconContent("d_console.infoicon.sml");
+        targetIcon = EditorGUIUtility.IconContent("d_AvatarSelector");
+        statusIcon = EditorGUIUtility.IconContent("d_ViewToolOrbit");
     }
 
     private void OnGUI()
     {
-        SaveLocation = "Assets/!VRM Blendshapes/";
-        GUIStyle style = new GUIStyle(GUI.skin.label);
-        style.richText = true;
-        style.wordWrap = true;
-        if (validTexture == null) {
-            validTexture = MakeTex(1, 1, new Color(0.0f, 0.57f, 0.57f, 1.0f));
-            validStyle = new GUIStyle();
-            validStyle.normal.background = validTexture;
-            validStyle.wordWrap = true;
-            validStyle.richText = true;
-            validStyle.alignment = TextAnchor.MiddleCenter;
-        }
-
-        if (invalidTexture == null) {
-            invalidTexture = MakeTex(1, 1, new Color(0.57f, 0.0f, 0.0f, 1.0f));
-            invalidStyle = new GUIStyle();
-            invalidStyle.normal.background = invalidTexture;
-            invalidStyle.wordWrap = true;
-            invalidStyle.richText = true;
-            invalidStyle.alignment = TextAnchor.MiddleCenter;
-        }
-        
-        if (infoTexture == null) {
-            infoTexture = MakeTex(1, 1, new Color(0.0f, 0.42f, 0.85f, 1.0f));
-            infoStyle = new GUIStyle();
-            infoStyle.normal.background = infoTexture;
-            infoStyle.wordWrap = true;
-            infoStyle.richText = true;
-            infoStyle.alignment = TextAnchor.MiddleCenter;
-        }
-
-        bool buttonEnabled = true;
-
-        EditorGUILayout.LabelField("<size=16><b>VRM ARKit Blendshapes Auto Setup</b></size>", style);
-        EditorGUILayout.LabelField("\n\n", EditorStyles.whiteLabel);
-        EditorGUILayout.BeginVertical(infoStyle);
-        GUILayout.Label("<size=12> ℹ️  <b>Avatar Name</b> will be used to name the files generated.</size>", style);
-        EditorGUILayout.EndVertical();
-        avatarName = EditorGUILayout.TextField("Avatar Name", avatarName);
-
-        if (avatarName == "") {
-            EditorGUILayout.BeginVertical(invalidStyle);
-            GUILayout.Label("<size=12><b> ⚠  Please give the avatar a name</b></size>", style);
-            EditorGUILayout.EndVertical();
-            buttonEnabled = false;
-        }
-        EditorGUILayout.LabelField("\n\n", EditorStyles.whiteLabel);
-        
         try {
-            EditorGUILayout.BeginVertical(infoStyle);
-            GUILayout.Label("<size=12> ℹ️  <b>Blendshapes Object</b> should contain the Facetracking Blendshapes. Usually it's the <b>\"Body\"</b> object in your avatar, but it may be different from model to model.</size>", style);
+            InitializeStyles();
+
+            SaveLocation = "Assets/!VRM Blendshapes/";
+
+            GUILayout.Space(15);
+            GUILayout.Label("ARKit Blendshape Auto Setup", headerStyle);
+            GUILayout.Label("Seamlessly merge <b>ARKit facetracking</b> into your avatar with just a few clicks.", subtitleStyle);
+            
+            // Native horizontal line separator
+            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
+            GUILayout.Space(10);
+
+            bool buttonEnabled = true;
+            
+            // Ensure nice label alignment like the reference image
+            float oldLabelWidth = EditorGUIUtility.labelWidth;
+            EditorGUIUtility.labelWidth = 120f;
+
+            // --- SECTION 1: Basic Information ---
+            EditorGUILayout.BeginVertical("HelpBox");
+            GUILayout.Space(8);
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+            GUILayout.Label(new GUIContent(" Basic Information", infoIcon.image), sectionHeaderStyle);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(5);
+            
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(12);
+            avatarName = EditorGUILayout.TextField("Avatar Name", avatarName);
+            GUILayout.Space(12);
+            GUILayout.EndHorizontal();
+
+            if (string.IsNullOrEmpty(avatarName)) {
+                GUILayout.Space(5);
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(12);
+                EditorGUILayout.HelpBox("Please give the avatar a name to proceed.", MessageType.Error);
+                GUILayout.Space(12);
+                GUILayout.EndHorizontal();
+                buttonEnabled = false;
+            }
+            GUILayout.Space(10);
             EditorGUILayout.EndVertical();
-            Avatar = EditorGUILayout.ObjectField("Blendshapes Object", Avatar, typeof(GameObject), true) as GameObject;
 
-        if (Avatar == null) {
-            EditorGUILayout.BeginVertical(invalidStyle);
-            GUILayout.Label("<size=12><b> ⚠  Please select an object</b></size>", style);
-            EditorGUILayout.EndVertical();
-            buttonEnabled = false;
-        } else if (blendShapeCount == 0) {
-            EditorGUILayout.BeginVertical(invalidStyle);
-            GUILayout.Label("<size=12><b> ⚠  Please select an object with valid Facetracking Blendshapes</b></size>", style);
-            EditorGUILayout.EndVertical();
-            buttonEnabled = false;
-        }
-        } catch (UnityEngine.ExitGUIException) {
-            //Here so unity dosn't freak out
-        } catch (System.Exception e) {
-            throw (e);
-        }
+            GUILayout.Space(5);
 
-        EditorGUILayout.LabelField("\n\n", EditorStyles.boldLabel);
-        
-        if (buttonEnabled) {
-            EditorGUILayout.BeginVertical(validStyle);
-            GUILayout.Label($"<size=12><b> ✔  You are all set!</b></size>", style);
-            EditorGUILayout.EndHorizontal();
-        }
-        
-        GUI.enabled = buttonEnabled;
-        var setupBtn = GUILayout.Button("Generate!");
-        GUI.enabled = true;
-        EditorGUILayout.LabelField("\n\n", EditorStyles.boldLabel);
+            // --- SECTION 2: Target Setup ---
+            EditorGUILayout.BeginVertical("HelpBox");
+            GUILayout.Space(8);
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+            GUILayout.Label(new GUIContent(" Target Setup", targetIcon.image), sectionHeaderStyle);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(5);
 
-        var endsWithLR = new Regex(@"Left|Right|_[LR]$");
-
-        if (Avatar != null) {
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(12);
             try {
-                var shared_mesh = Avatar.GetComponent<SkinnedMeshRenderer>().sharedMesh;
-                int count = 0;
-                string tmpMsg = "";
-                string clipboard = "";
-                bool latch = true;
-
-                for(int i = 0; i < shared_mesh.blendShapeCount; i++) {
-                    avatarBlendshapes[i] = shared_mesh.GetBlendShapeName(i);
+                Avatar = EditorGUILayout.ObjectField("Blendshapes Object", Avatar, typeof(GameObject), true) as GameObject;
+                
+                if (Avatar != lastAvatar) {
+                    lastAvatar = Avatar;
+                    DetectBlendshapes();
                 }
 
-                foreach (KeyValuePair<string, string[]> ARKitItem in ARKitUE) {
-                    string blendshapeMatch = null;
-                    foreach (string blendshape in ARKitItem.Value) {
-                        var bsCheck = avatarBlendshapes.FirstOrDefault(bs => bs.Value.ToLower() == blendshape.ToLower());
+            } catch (UnityEngine.ExitGUIException) {
+                // Unity internal
+            } catch (System.Exception e) {
+                if (e is ArgumentException) GUIUtility.ExitGUI(); else throw;
+            }
+            GUILayout.Space(12);
+            GUILayout.EndHorizontal();
 
-                        if (bsCheck.Value != null) {
-                            blendshapeMatch = blendshape;
-                            if (!endsWithLR.IsMatch(ARKitItem.Key) && endsWithLR.IsMatch(bsCheck.Value)) {
-                                bool isLeft = bsCheck.Value.EndsWith("Left");
-                                blendshapeMatch += $", {blendshape.Replace(isLeft ? "Left" : "Right", isLeft ? "Right" : "Left")}";
+            if (Avatar == null) {
+                GUILayout.Space(5);
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(12);
+                EditorGUILayout.HelpBox("Please select an object containing your blendshapes (Usually 'Body').", MessageType.Warning);
+                GUILayout.Space(12);
+                GUILayout.EndHorizontal();
+                buttonEnabled = false;
+            } else if (blendShapeCount == 0 && mappingStates.Count == 0) {
+                GUILayout.Space(5);
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(12);
+                EditorGUILayout.HelpBox("The selected object has no valid Facetracking Blendshapes.", MessageType.Error);
+                GUILayout.Space(12);
+                GUILayout.EndHorizontal();
+                buttonEnabled = false;
+            }
+            
+            GUILayout.Space(10);
+            EditorGUILayout.EndVertical();
+
+            GUILayout.Space(5);
+
+            // --- SECTION 3: Detection Status ---
+            if (Avatar != null && mappingStates.Count > 0) {
+                int validCount = mappingStates.Values.Count(m => m.IsOverridden ? m.OverrideSelectedIndex > 0 : m.HasMatch);
+                
+                EditorGUILayout.BeginVertical("HelpBox", GUILayout.ExpandHeight(showBsList));
+                
+                // Header Row for Section 3
+                GUILayout.Space(8);
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(8);
+                
+                // Icon + Label
+                GUILayout.Label(new GUIContent(" Detection Status", statusIcon.image), sectionHeaderStyle);
+                
+                GUILayout.FlexibleSpace();
+                
+                // Right-aligned custom arrow
+                GUILayout.Label(showBsList ? "▼" : "▶", new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleRight, normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } }, GUILayout.Width(20));
+                GUILayout.Space(8);
+                
+                GUILayout.EndHorizontal();
+
+                // Make the entire header row clickable
+                Rect headerRect = GUILayoutUtility.GetLastRect();
+                headerRect.y -= 20; 
+                headerRect.height += 20;
+                EditorGUIUtility.AddCursorRect(headerRect, MouseCursor.Link);
+                
+                if (Event.current.type == EventType.MouseDown && headerRect.Contains(Event.current.mousePosition)) {
+                    showBsList = !showBsList;
+                    Event.current.Use(); 
+                    GUI.FocusControl(null); // Remove focus to prevent ghost highlighting
+                }
+
+                GUILayout.Space(5);
+
+                // Information Box (Always Visible)
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(12);
+                EditorGUILayout.HelpBox($"Detected {avatarBlendshapes.Count} total blendshapes. {validCount} are mapped for ARKit.", MessageType.Info);
+                GUILayout.Space(12);
+                GUILayout.EndHorizontal();
+                
+                GUILayout.Space(5);
+
+                // Blendshapes List (Collapsible)
+                if (showBsList) {
+                    
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(12);
+                    scrollPos = EditorGUILayout.BeginScrollView(scrollPos, GUI.skin.box, GUILayout.ExpandHeight(true));
+                    
+                    string clipboard = "";
+                    foreach (var kvp in mappingStates) {
+                        var state = kvp.Value;
+                        GUILayout.BeginHorizontal();
+                        
+                        bool isResolved = state.IsOverridden ? (state.OverrideSelectedIndex > 0) : state.HasMatch;
+                        string colorHex = isResolved ? "#88ff88" : "#aaaaaa";
+                        GUILayout.Label($"<color={colorHex}><b>{state.ArkitKey}</b></color>", listItemStyle, GUILayout.Width(130));
+                        
+                        GUI.enabled = state.IsOverridden;
+                        state.OverrideSelectedIndex = EditorGUILayout.Popup(state.OverrideSelectedIndex, avatarBlendshapeNames, GUILayout.ExpandWidth(true));
+                        GUI.enabled = true;
+                        
+                        bool prevOverride = state.IsOverridden;
+                        
+                        var oldColorOverride = GUI.backgroundColor;
+                        if (state.IsOverridden) {
+                            GUI.backgroundColor = new Color(0.9f, 0.8f, 0.2f); // Yellowish
+                        }
+                        bool overrideClicked = GUILayout.Button("Override", state.IsOverridden ? overrideBtnStyleActive : overrideBtnStyleInactive);
+                        GUI.backgroundColor = oldColorOverride;
+                        
+                        if (overrideClicked) {
+                            state.IsOverridden = !state.IsOverridden;
+                            if (!state.IsOverridden) {
+                                state.OverrideSelectedIndex = state.HasMatch ? state.AutoMatchIndex1 + 1 : 0;
                             }
-                            count++;
-                            break;
+                        }
+
+                        GUILayout.EndHorizontal();
+
+                        if (isResolved) {
+                            string resolvedName = state.IsOverridden ? avatarBlendshapeNames[state.OverrideSelectedIndex] : state.AutoMatchDisplay;
+                            clipboard += $"[{state.ArkitKey}] => {resolvedName}\n";
                         }
                     }
-
-                    tmpMsg += latch ? "" : $"<b>[{ARKitItem.Key}]</b> ➡ {blendshapeMatch}\n";
-                    clipboard += latch ? "" : $"[{ARKitItem.Key}] => {blendshapeMatch}\n";
-                    latch = false;
-                }
-
-                EditorGUILayout.BeginVertical(infoStyle);
-                GUILayout.Label($"<size=15><b> ℹ️  {shared_mesh.blendShapeCount}</b></size> BlendShapes detected which <size=15><b>{count}</b></size> are valid VRM shapes.", style);
-                EditorGUILayout.EndVertical();
-
-                showBsList = EditorGUILayout.Foldout(showBsList, $"Blendshapes List ({count})", true);
-
-                if (showBsList) {
-                    scrollPos = EditorGUILayout.BeginScrollView(scrollPos, GUILayout.ExpandHeight(true));
-                    var copyBtn = GUILayout.Button("Copy list to clipboard!");
-                    GUILayout.Label($"<size=12>{tmpMsg}</size>", style);
                     EditorGUILayout.EndScrollView();
+                    GUILayout.Space(12);
+                    GUILayout.EndHorizontal();
 
-                    if (copyBtn) {
+                    GUILayout.Space(5);
+                    
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(12);
+                    var oldColorCopy = GUI.backgroundColor;
+                    GUI.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                    if (GUILayout.Button("Copy to Clipboard", copyBtnStyle)) {
                         GUIUtility.systemCopyBuffer = clipboard;
-                        EditorUtility.DisplayDialog(
-                            "Confirm Action", // Title
-                            "Blendshape list was succesfully copied to your clipboard!", // Message
-                            "OK"
-                        );
+                        EditorUtility.DisplayDialog("Copied", "Blendshape list copied to clipboard!", "OK");
+                        GUIUtility.ExitGUI();
                     }
-                }
-
-                blendShapeCount = count;
-            } catch {
-                scrollPos = EditorGUILayout.BeginScrollView(scrollPos, GUILayout.ExpandHeight(true));
-                GUILayout.Label("No valid blend shapes detected on current avatar", EditorStyles.boldLabel);
-                EditorGUILayout.EndScrollView();
+                    GUI.backgroundColor = oldColorCopy;
+                    GUILayout.Space(12);
+                    GUILayout.EndHorizontal();
+                    
+                    GUILayout.Space(10);
+                } // end if (showBsList)
+                EditorGUILayout.EndVertical();
+            } else {
                 blendShapeCount = 0;
             }
-        } else {
-            blendShapeCount = 0;
+
+            EditorGUIUtility.labelWidth = oldLabelWidth;
+
+            if (buttonEnabled) {
+                GUILayout.Space(10);
+                EditorGUILayout.HelpBox("All checks passed! You are ready to generate your ARKit assets.", MessageType.Info);
+            }
+
+            // Generate Button
+            GUI.enabled = buttonEnabled;
+            var oldColor2 = GUI.backgroundColor;
+            GUI.backgroundColor = buttonEnabled ? new Color(0.2f, 0.6f, 0.9f) : Color.grey;
+            var setupBtn = GUILayout.Button("Generate Assets", btnStyle);
+            GUI.backgroundColor = oldColor2;
+            GUI.enabled = true;
+
+            if (setupBtn) {
+                RunGeneration();
+            }
+            
+            this.Repaint();
+        } catch (ArgumentException) {
+            // Suppress the layout mismatch exception that happens during Hot Reload
+            GUIUtility.ExitGUI();
+        }
+    }
+
+    private void RunGeneration() {
+        bool hasOverrides = mappingStates.Values.Any(m => m.IsOverridden);
+        if (hasOverrides) {
+            if (!EditorUtility.DisplayDialog("Confirm Overrides", "You have manually overridden some blendshapes. Are you sure you want to proceed?", "Yes", "Cancel")) {
+                return;
+            }
         }
 
-        if (setupBtn) {
-            progress = 0f;
-            EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", "Starting", progress);
-            var shared_mesh = Avatar.GetComponent<SkinnedMeshRenderer>().sharedMesh;
-            List<string> BlendShape = new List<string>();
+        progress = 0f;
+        EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", "Starting...", progress);
+        var shared_mesh = Avatar.GetComponent<SkinnedMeshRenderer>().sharedMesh;
+        List<string> BlendShape = new List<string>();
 
-            if (!Directory.Exists(SaveLocation + $@"/{avatarName}_Clips")) {
-                Directory.CreateDirectory(SaveLocation + $@"/{avatarName}_Clips");
-            } else {
-                Directory.Delete(SaveLocation + $@"/{avatarName}_Clips", true);
-                Directory.CreateDirectory(SaveLocation + $@"/{avatarName}_Clips");
-            }
-            //check for a avatar file that already exitsts
-            if (File.Exists(Directory.GetCurrentDirectory() + @"/" + SaveLocation + "/" + avatarName + "_AvatarBlendShape.asset")) {
-                File.Delete(Directory.GetCurrentDirectory() + @"/" + SaveLocation + "/" + avatarName + "_AvatarBlendShape.asset");
-                File.Delete(Directory.GetCurrentDirectory() + @"/" + SaveLocation + "/" + avatarName + "_AvatarBlendShape.asset.meta");
-            }
-            AssetDatabase.Refresh();
-            //Generate Clips
-            float tempProgValue = (float)(.8 / blendShapeCount);
-            int i = 0;
+        string clipsFolder = SaveLocation + $@"/{avatarName}_Clips";
+        if (!Directory.Exists(clipsFolder)) {
+            Directory.CreateDirectory(clipsFolder);
+        } else {
+            Directory.Delete(clipsFolder, true);
+            Directory.CreateDirectory(clipsFolder);
+        }
 
-            foreach (KeyValuePair<string, string[]> ARKitItem in ARKitUE) {
-                foreach (string blendshape in ARKitItem.Value) {                
-                    var bsCheck = avatarBlendshapes.FirstOrDefault(bs => bs.Value.ToLower() == blendshape.ToLower());
+        string avatarAssetPath = Directory.GetCurrentDirectory() + @"/" + SaveLocation + "/" + avatarName + "_AvatarBlendShape.asset";
+        if (File.Exists(avatarAssetPath)) {
+            File.Delete(avatarAssetPath);
+            File.Delete(avatarAssetPath + ".meta");
+        }
+        AssetDatabase.Refresh();
 
-                    if (bsCheck.Value != null) {
-                        bool isComboBs = !endsWithLR.IsMatch(ARKitItem.Key) && endsWithLR.IsMatch(bsCheck.Value);
-                        progress += tempProgValue;
-                        EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Generating {ARKitItem.Key}", progress);
-                        BlendShape.Add(ARKitItem.Key);
-                        var Clip = ScriptableObject.CreateInstance<BlendShapeClip>();
-                        foreach(NamePreset obj in NamePresets) {
-                            if(obj.name == ARKitItem.Key) {
-                                Clip.Preset = obj.blendShapePreset;
-                            }
-                        }
-                        string path = SaveLocation + $@"/{avatarName}_Clips/" + ARKitItem.Key + ".asset";
-                        Clip.BlendShapeName = ARKitItem.Key;
-                        var Data = new VRM.BlendShapeBinding();
-                        Data.Weight = 100;
-                        Data.RelativePath = Avatar.name;
-                        Data.Index = bsCheck.Key;
-                        var array = new VRM.BlendShapeBinding[isComboBs ? 2 : 1];
-                        array[0] = Data;
+        int validCount = mappingStates.Values.Count(m => m.IsOverridden ? m.OverrideSelectedIndex > 0 : m.HasMatch);
+        float tempProgValue = (float)(0.8f / (validCount == 0 ? 1 : validCount));
+        int i = 0;
 
-                        if (isComboBs) {
-                            bool isLeft = bsCheck.Value.EndsWith("Left");
-                            var bsCheck2 = avatarBlendshapes.FirstOrDefault(bs => bs.Value.ToLower() == blendshape.Replace(isLeft ? "Left" : "Right", isLeft ? "Right" : "Left").ToLower());
+        foreach (var kvp in mappingStates) {
+            var state = kvp.Value;
+            bool willGenerate = state.IsOverridden ? (state.OverrideSelectedIndex > 0) : state.HasMatch;
+            if (!willGenerate) continue;
 
-                            if (bsCheck.Value != null) {
-                                var Data2 = new VRM.BlendShapeBinding();
-                                Data2.Weight = 100;
-                                Data2.RelativePath = Avatar.name;
-                                Data2.Index = bsCheck2.Key;
-                                array[1] = Data2;
-                            }
-                        }
-
-                        Clip.Values = array;
-                        AssetDatabase.CreateAsset(Clip, path);
-                        i++;
-                        break;
-                    }
+            progress += tempProgValue;
+            EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Generating {state.ArkitKey}...", progress);
+            BlendShape.Add(state.ArkitKey);
+            
+            var Clip = ScriptableObject.CreateInstance<BlendShapeClip>();
+            foreach(LocalNamePreset obj in NamePresets) {
+                if(obj.name == state.ArkitKey) {
+                    Clip.Preset = obj.blendShapePreset;
                 }
             }
 
-            //Generate the avatar blendshape file before the assetdatabase refresh
-            var AvatarData = ScriptableObject.CreateInstance<BlendShapeAvatar>();
-            AssetDatabase.CreateAsset(AvatarData, SaveLocation + "/" + avatarName + "_AvatarBlendShape.asset");
+            string path = SaveLocation + $@"/{avatarName}_Clips/" + state.ArkitKey + ".asset";
+            Clip.BlendShapeName = state.ArkitKey;
+            
+            if (state.IsOverridden) {
+                int mappedIndex = state.OverrideSelectedIndex - 1; // -1 for "None" offset
+                var Data = new VRM.BlendShapeBinding {
+                    Weight = 100,
+                    RelativePath = Avatar.name,
+                    Index = mappedIndex
+                };
+                Clip.Values = new VRM.BlendShapeBinding[] { Data };
+            } else {
+                var Data1 = new VRM.BlendShapeBinding {
+                    Weight = 100,
+                    RelativePath = Avatar.name,
+                    Index = state.AutoMatchIndex1
+                };
 
-            //Generate a neutral clip
-            EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Generating Neural shape", progress += tempProgValue);
-            BlendShape.Insert(0, "Neutral");
-            var Clip2 = ScriptableObject.CreateInstance<BlendShapeClip>();
-            Clip2.Preset = BlendShapePreset.Neutral;
-            Clip2.BlendShapeName = "Neutral";
-            AssetDatabase.CreateAsset(Clip2, SaveLocation + $"/{avatarName}_Clips/Neutral.asset");
-            AssetDatabase.Refresh();
+                if (state.AutoMatchIndex2 != -1) {
+                    var Data2 = new VRM.BlendShapeBinding {
+                        Weight = 100,
+                        RelativePath = Avatar.name,
+                        Index = state.AutoMatchIndex2
+                    };
+                    Clip.Values = new VRM.BlendShapeBinding[] { Data1, Data2 };
+                } else {
+                    Clip.Values = new VRM.BlendShapeBinding[] { Data1 };
+                }
+            }
 
-            //Add clips to a Blend Shape Avatar
-            EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Adding shapes to VRM avatar file", .9f);
-            List<string> guids = new List<string>();
-            string path3 = SaveLocation + $"/{avatarName}_AvatarBlendShape.asset";
-            StreamReader sr = new StreamReader(path3);
-            string TmpData = sr.ReadToEnd();
-            sr.Close();
-            bool latch = true;
-            TmpData = TmpData.Replace("  Clips: []", "  Clips:");
+            AssetDatabase.CreateAsset(Clip, path);
+            i++;
+        }
 
-            foreach (var obj in BlendShape) {
-                string[] lines = System.IO.File.ReadAllLines(SaveLocation + $@"/{avatarName}_Clips/" + obj + ".asset.meta");
+        // Avatar file
+        var AvatarData = ScriptableObject.CreateInstance<BlendShapeAvatar>();
+        AssetDatabase.CreateAsset(AvatarData, SaveLocation + "/" + avatarName + "_AvatarBlendShape.asset");
+
+        // Neutral clip
+        EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Generating Neutral shape...", progress += tempProgValue);
+        BlendShape.Insert(0, "Neutral");
+        var Clip2 = ScriptableObject.CreateInstance<BlendShapeClip>();
+        Clip2.Preset = BlendShapePreset.Neutral;
+        Clip2.BlendShapeName = "Neutral";
+        AssetDatabase.CreateAsset(Clip2, SaveLocation + $"/{avatarName}_Clips/Neutral.asset");
+        AssetDatabase.Refresh();
+
+        // Blend Shape Avatar Injection
+        EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Finalizing VRM Avatar asset...", 0.9f);
+        string path3 = SaveLocation + $"/{avatarName}_AvatarBlendShape.asset";
+        StreamReader sr = new StreamReader(path3);
+        string TmpData = sr.ReadToEnd();
+        sr.Close();
+        
+        bool latch = true;
+        TmpData = TmpData.Replace("  Clips: []", "  Clips:");
+
+        foreach (var obj in BlendShape) {
+            string metaPath = SaveLocation + $@"/{avatarName}_Clips/" + obj + ".asset.meta";
+            if(File.Exists(metaPath)) {
+                string[] lines = System.IO.File.ReadAllLines(metaPath);
                 TmpData += $"{(!latch ? "\n" : "")}  - {{fileID:\"{Convert.ToInt64(lines[4].Split(':')[1].Trim())}\", guid: \"{lines[1].Split(' ')[1].Trim()}\", type: 2}}";
                 latch = false;
             }
-
-            EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Finishing up", 1f);
-            StreamWriter streamWriter = new StreamWriter(path3);
-            streamWriter.Write(TmpData);
-            streamWriter.Close();
-            AssetDatabase.Refresh();
-            UnityEngine.Debug.Log($"Sucessfully created: {BlendShape.Count} VRM keys for avatar: {avatarName}");
-            EditorGUIUtility.PingObject(AvatarData);
-            EditorUtility.ClearProgressBar();
         }
-        this.Repaint();
+
+        EditorUtility.DisplayProgressBar("Generating VRM Blendshapes", $"Done!", 1f);
+        StreamWriter streamWriter = new StreamWriter(path3);
+        streamWriter.Write(TmpData);
+        streamWriter.Close();
+        AssetDatabase.Refresh();
+
+        UnityEngine.Debug.Log($"Successfully created {BlendShape.Count} VRM keys for avatar: {avatarName}");
+        EditorGUIUtility.PingObject(AvatarData);
+        EditorUtility.ClearProgressBar();
     }
 
-    // Helper function to create a solid color Texture2D
-    private Texture2D MakeTex(int width, int height, Color color)
+    private void DetectBlendshapes()
     {
-        Color[] pixels = new Color[width * height];
-        for (int i = 0; i < pixels.Length; i++)
+        mappingStates.Clear();
+        avatarBlendshapes.Clear();
+        blendShapeCount = 0;
+
+        if (Avatar == null)
         {
-            pixels[i] = color;
+            avatarBlendshapeNames = new string[0];
+            return;
         }
-        Texture2D texture = new Texture2D(width, height);
-        texture.SetPixels(pixels);
-        texture.Apply();
-        return texture;
+
+        try
+        {
+            var smr = Avatar.GetComponent<SkinnedMeshRenderer>();
+            if (smr == null || smr.sharedMesh == null)
+            {
+                avatarBlendshapeNames = new string[0];
+                return;
+            }
+
+            var shared_mesh = smr.sharedMesh;
+            avatarBlendshapeNames = new string[shared_mesh.blendShapeCount + 1];
+            avatarBlendshapeNames[0] = "None";
+
+            for(int i = 0; i < shared_mesh.blendShapeCount; i++) {
+                string bsName = shared_mesh.GetBlendShapeName(i);
+                avatarBlendshapeNames[i + 1] = bsName;
+                avatarBlendshapes[i] = bsName;
+            }
+
+            int matchCount = 0;
+            var endsWithLR = new Regex(@"Left|Right|_[LR]$");
+
+            foreach (KeyValuePair<string, string[]> ARKitItem in ARKitUE) {
+                var state = new BlendshapeMappingState { ArkitKey = ARKitItem.Key };
+                string blendshapeMatch = null;
+
+                foreach (string blendshape in ARKitItem.Value) {
+                    var bsCheck = avatarBlendshapes.FirstOrDefault(bs => bs.Value.ToLower() == blendshape.ToLower());
+
+                    if (bsCheck.Value != null) {
+                        blendshapeMatch = blendshape;
+                        state.HasMatch = true;
+                        state.AutoMatchIndex1 = bsCheck.Key;
+                        state.OverrideSelectedIndex = bsCheck.Key + 1;
+
+                        if (!endsWithLR.IsMatch(ARKitItem.Key) && endsWithLR.IsMatch(bsCheck.Value)) {
+                            bool isLeft = bsCheck.Value.EndsWith("Left");
+                            string partner = blendshape.Replace(isLeft ? "Left" : "Right", isLeft ? "Right" : "Left");
+                            blendshapeMatch += $", {partner}";
+                            
+                            var bsCheck2 = avatarBlendshapes.FirstOrDefault(bs => bs.Value.ToLower() == partner.ToLower());
+                            if (bsCheck2.Value != null) {
+                                state.AutoMatchIndex2 = bsCheck2.Key;
+                            }
+                        }
+                        matchCount++;
+                        break;
+                    }
+                }
+
+                state.AutoMatchDisplay = state.HasMatch ? blendshapeMatch : "Not Found";
+                mappingStates.Add(ARKitItem.Key, state);
+            }
+
+            blendShapeCount = matchCount;
+        }
+        catch
+        {
+            avatarBlendshapeNames = new string[0];
+            blendShapeCount = 0;
+        }
     }
 }
+
+public class BlendshapeMappingState
+{
+    public string ArkitKey;
+    public bool HasMatch;
+    public string AutoMatchDisplay;
+    public int AutoMatchIndex1 = -1;
+    public int AutoMatchIndex2 = -1;
+    public bool IsOverridden;
+    public int OverrideSelectedIndex = 0;
+}
+
 public class ClipValue
 {
     public string RelativePath = "Body";
     public int Index;
     public float Weight;
 }
-class NamePreset
+
+class LocalNamePreset
 {
     public string name;
     public BlendShapePreset blendShapePreset;
